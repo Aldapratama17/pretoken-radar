@@ -155,14 +155,12 @@ export interface LiveRow {
   multiple: number;
 }
 
-/** A category's comparable multiple, as the dashboard's methodology section states it. */
 export interface CompRow {
   category: string;
   n: number;
   median_multiple: number;
 }
 
-/** Everything the dashboard needs: the board, the live set, the comps and the constants. */
 export interface RadarData {
   as_of: string;
   source: string;
@@ -182,6 +180,7 @@ export interface RadarData {
 export function buildComps(snapshot: Snapshot, model: ModelConstants = MODEL): { byCategory: CompRow[]; market: number } {
   const live = snapshot.protocols.filter((p) => p.mcap_usd !== null && p.mcap_usd > 0 && p.tvl_usd > 0);
   const byCategory = new Map<string, number[]>();
+
   for (const p of live) {
     const cat = p.category ?? 'Uncategorized';
     const mult = p.mcap_usd! / p.tvl_usd;
