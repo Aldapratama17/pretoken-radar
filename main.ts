@@ -74,9 +74,7 @@ for (const name of shots) {
 
 // Write dossier last: the scorer rebuilds it from this /output and compares bytes.
 writeFileSync(join(out, "dossier.json"), buildDossier(out, {
-  text_max_bytes: TEXT_MAX_BYTES,
-  screenshots: SCREENSHOT_CAPS,
-  dashboard: { max_files: 400, max_bytes: 4_194_304 }
+  text_max_bytes: TEXT_MAX_BYTES
 }));
 
 process.stdout.write(
