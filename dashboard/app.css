@@ -24,6 +24,8 @@
   --shadow: rgba(0, 0, 0, 0.5);
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --spacing: 8px;
+  --radius: 8px;
 }
 
 html, body {
@@ -58,7 +60,7 @@ body {
 }
 
 #board {
-  max-width: 1400px;
+  max-width: 1500px;
   margin: 0 auto;
   padding: 24px 16px;
 }
@@ -93,7 +95,7 @@ body {
   padding: 16px;
   background: var(--bg-elev);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
 }
 
 .filterbar label {
@@ -173,12 +175,12 @@ body {
   font-size: 13px;
   background: var(--bg-elev);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   overflow: hidden;
 }
 
 #board-table caption {
-  padding: 12px 16px;
+  padding: 10px 16px;
   text-align: left;
   font-size: 12px;
   color: var(--fg-dim);
@@ -188,6 +190,9 @@ body {
 
 #board-table thead {
   background: var(--card);
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
 #board-table th {
@@ -200,6 +205,12 @@ body {
   color: var(--fg-dim);
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
+  user-select: none;
+}
+
+#board-table th[data-sort]:hover {
+  color: var(--accent);
+  background: rgba(0, 212, 170, 0.05);
 }
 
 #board-table td {
@@ -265,6 +276,36 @@ body {
   color: var(--fg);
 }
 
+.cat-chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+/* Category chip colors - deterministic based on category name */
+.cat-risk-curators { background: rgba(59, 130, 246, 0.2); color: #60a5fa; }
+.cat-onchain-capital-allocator { background: rgba(139, 92, 246, 0.2); color: #a78bfa; }
+.cat-cdp { background: rgba(249, 115, 22, 0.2); color: #fb923c; }
+.cat-dexs { background: rgba(0, 212, 170, 0.2); color: var(--accent); }
+.cat-rwa { background: rgba(234, 179, 8, 0.2); color: #eab308; }
+.cat-collateral-markets { background: rgba(236, 72, 153, 0.2); color: #ec4899; }
+.cat-yield { background: rgba(16, 185, 129, 0.2); color: #10b981; }
+.cat-bridge { background: rgba(99, 102, 241, 0.2); color: #818cf8; }
+.cat-lending { background: rgba(20, 184, 166, 0.2); color: #14b8a6; }
+.cat-liquid-staking { background: rgba(168, 85, 247, 0.2); color: #a855f7; }
+.cat-basis-trading { background: rgba(244, 63, 94, 0.2); color: #f43f5e; }
+.cat-canonical-bridge { background: rgba(6, 182, 212, 0.2); color: #06b6d4; }
+.cat-restaking { background: rgba(139, 92, 246, 0.2); color: #a78bfa; }
+.cat-privacy { background: rgba(107, 114, 128, 0.2); color: #9ca3af; }
+.cat-token-locker { background: rgba(251, 146, 60, 0.2); color: #fb923c; }
+.cat-indexes { background: rgba(234, 179, 8, 0.2); color: #eab308; }
+.cat-decentralized-ai { background: rgba(139, 92, 246, 0.2); color: #a78bfa; }
+.cat-uncategorized { background: rgba(156, 163, 175, 0.2); color: #9ca3af; }
+
 .chains {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -307,13 +348,32 @@ body {
   white-space: nowrap;
 }
 
+.status {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.status.pre-token {
+  background: rgba(0, 212, 170, 0.15);
+  color: var(--accent);
+}
+
+.status.token-trades {
+  background: rgba(255, 184, 0, 0.15);
+  color: var(--warn);
+}
+
 /* Methodology */
 .methodology {
   margin-top: 32px;
   padding: 24px;
   background: var(--bg-elev);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
 }
 
 .methodology h2 {
@@ -384,7 +444,7 @@ footer {
 
 .detail-panel {
   width: 100%;
-  max-width: 640px;
+  max-width: 720px;
   max-height: 85vh;
   overflow-y: auto;
   background: var(--bg-elev);
@@ -410,6 +470,7 @@ footer {
   background: var(--bg-elev);
   z-index: 1;
   border-radius: 12px 12px 0 0;
+  gap: 16px;
 }
 
 .detail-header h2 {
@@ -436,6 +497,11 @@ footer {
   font-size: 11px;
   font-weight: 600;
   margin-left: 8px;
+}
+
+.detail-header .status {
+  flex-shrink: 0;
+  margin-top: 2px;
 }
 
 .close-btn {
@@ -491,6 +557,9 @@ footer {
   font-family: var(--font-mono);
 }
 
+.detail-grid .positive { color: var(--accent); }
+.detail-grid .negative { color: var(--danger); }
+
 .detail-panel h3 {
   padding: 0 24px 12px;
   font-size: 15px;
@@ -500,8 +569,81 @@ footer {
   margin-bottom: 8px;
 }
 
-.farm-plan {
+/* Value Bar Chart */
+.value-bar-chart {
+  padding: 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.bar-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.bar-label {
+  width: 80px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--fg-dim);
+  font-family: var(--font-mono);
+}
+
+.bar-track {
+  flex: 1;
+  height: 28px;
+  background: var(--bg);
+  border-radius: 6px;
+  overflow: hidden;
+  position: relative;
+  border: 1px solid var(--border);
+}
+
+.bar-fill {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding-right: 12px;
+  border-radius: 6px;
+  transition: width 0.3s ease;
+}
+
+.bar-value {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--bg);
+  white-space: nowrap;
+}
+
+/* Sparkline */
+.sparkline-wrap {
+  padding: 16px 24px;
+  display: flex;
+  align-items: flex-end;
+  height: 60px;
+  background: var(--bg);
+  border-radius: var(--radius);
+  margin: 0 24px 16px;
+  border: 1px solid var(--border);
+}
+
+.sparkline {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Farm Plan - scrollable */
+.farm-plan-wrap {
   padding: 16px 24px 24px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.farm-plan {
   list-style: none;
   counter-reset: step;
 }
@@ -565,5 +707,14 @@ footer {
 
   .detail-grid dt {
     font-weight: 600;
+  }
+
+  .bar-label {
+    width: 60px;
+    font-size: 11px;
+  }
+
+  .sparkline-wrap {
+    margin: 0 16px 16px;
   }
 }
