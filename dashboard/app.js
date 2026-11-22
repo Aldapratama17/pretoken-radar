@@ -25,7 +25,7 @@
   const el = (tag, attrs = {}, ...children) => {
     const e = document.createElement(tag);
     Object.entries(attrs).forEach(([k, v]) => e.setAttribute(k, v));
-    children.forEach(c => e.append(c instanceof Node ? c : document.createTextNode(c)));
+    children.forEach(c => { if (c == null) return; e.append(c instanceof Node ? c : document.createTextNode(c)); });
     return e;
   };
   const fmt = (n) => n.toLocaleString();
@@ -119,78 +119,56 @@
 
   // Render a table row
   function rowEl(p) {
-    const tr = el("tr", {});
-    tr.innerHTML = `
-      <td class="rank">${p.rank}</td>
-      <td class="name">${el("a", { href: `?detail=${p.slug}` }, p.name).outerHTML} <span class="slug">${p.slug}</span> ${isWatchlist(p) ? '<span class="wl-badge" title="watchlist">★</span>' : ""}</td>
-      <td class="category">${p.category ?? "—"}</td>
-      <td class="chains">${p.chains.join(", ")}</td>
-      <td class="tvl">${fmtUsd(p.tvl_usd)}</td>
-      <td class="change ${p.change_7d !== null && p.change_7d >= 0 ? "positive" : "negative"}">${fmtPct(p.change_7d)}</td>
-      <td class="implied-value">${fmtUsd(p.implied_value_usd)}</td>
-      <td class="age">${p.age_days}d</td>
-      <td class="status ${isPreToken(p) ? "pre-token" : "token-trades"}">${isPreToken(p) ? "pre-token" : "token trades"}</td>
-    `;
-    tr.addEventListener("click", (e) => {
-      if (e.target.tagName !== "A") openDetail(p);
-    });
-    return tr;
+    const rankBadge = el("span", { class: "rank" }, p.rank);
+    const nameCell = el("td", { class: "name" },
+      el("a", { href: `?detail=${p.slug}` }, p.name ?? p.slug),
+      el("span", { class: "slug" }, p.slug),
+      isWatchlist(p) ? el("span", { class: "wl-badge", title: "watchlist" }, "★") : null
+    );
+    const catCell = el("td", { class: "category" }, p.category ?? "—");
+    const chainCell = el("td", { class: "chains" }, p.chains.join(", "));
+    const tvlCell = el("td", { class: "tvl" }, fmtUsd(p.tvl_usd));
+    const changeCell = el("td", { class: "change" + (p.change_7d !== null && p.change_7d >= 0 ? " positive" : " negative") }, fmtPct(p.change_7d));
+    const impliedCell = el("td", { class: "implied" }, fmtUsd(p.implied_value_usd));
+    const ageCell = el("td", { class: "age" }, p.age_days + "d");
+    const statusCell = el("td", { class: "status " + (isPreToken(p) ? "pre-token" : "token-trades") }, isPreToken(p) ? "pre-token" : "token trades");
+    return el("tr", { "data-slug": p.slug },
+      el("td", {}, rankBadge),
+      nameCell,
+      catCell,
+      chainCell,
+      tvlCell,
+      changeCell,
+      impliedCell,
+      ageCell,
+      statusCell
+    );
   }
 
-  // Render table
-  function renderTable() {
-    const filtered = DATA.board.filter(matches);
-    filtered.sort((a, b) => {
-      let aVal = a[state.sortKey];
-      let bVal = b[state.sortKey];
-      if (aVal === null) aVal = -Infinity;
-      if (bVal === null) bVal = -Infinity;
-      if (state.sortDir === "asc") return aVal > bVal ? 1 : -1;
-      return aVal < bVal ? 1 : -1;
-    });
-
-    const tbody = $("#board-table tbody");
-    tbody.innerHTML = "";
-    filtered.forEach(p => tbody.appendChild(rowEl(p)));
-
-    $("#row-count").textContent = `${filtered.length} / ${DATA.board.length} protocols`;
-
-    // Update sort indicators
-    $$("#board-table th[data-sort]").forEach(th => {
-      const key = th.dataset.sort;
-      const label = th.dataset.label;
-      th.innerHTML = `${label} ${getSortArrow(key)}`;
-      th.dataset.sort = key;
-      th.dataset.label = label;
-    });
-  }
-
-  // Value bar chart (simplified)
+  // Value bar chart (text-based)
   function valueBarChart(p) {
     const m = p.model;
     const bars = [
-      { label: "Base TVL × comp", value: m.base_value_usd, color: "#666" },
-      { label: "× growth", value: m.base_value_usd * m.growth_multiplier, color: m.growth_multiplier >= 1 ? "#2a7" : "#c44" },
-      { label: "× maturity", value: m.base_value_usd * m.growth_multiplier * m.maturity_multiplier, color: "#46a" },
-      { label: "Implied", value: p.implied_value_usd, color: "#000" }
+      { label: "TVL", value: p.tvl_usd },
+      { label: "× Comp", value: m.comp_multiple },
+      { label: "× Growth", value: m.growth_multiplier },
+      { label: "× Maturity", value: m.maturity_multiplier },
+      { label: "= Implied", value: p.implied_value_usd }
     ];
-    const maxVal = Math.max(...bars.map(b => b.value));
-    const wrap = el("div", { class: "value-bars" });
-    bars.forEach(b => {
-      const pct = (b.value / maxVal * 100).toFixed(1);
-      wrap.appendChild(el("div", { class: "bar-row" },
+    return el("div", { class: "value-bars" },
+      ...bars.map(b => el("div", { class: "bar-row" },
         el("span", { class: "bar-label" }, b.label),
-        el("div", { class: "bar-track" },
-          el("div", { class: "bar-fill", style: `width:${pct}%;background:${b.color}` })
-        ),
-        el("span", { class: "bar-value" }, fmtUsd(b.value))
-      ));
-    });
-    return wrap;
+        el("div", { class: "bar-track" }, el("div", { class: "bar-fill", style: `width:${Math.min(100, (b.value / p.implied_value_usd) * 100)}%` }))
+      ))
+    );
   }
 
-  // Sparkline
+  // Sparkline for 7d TVL trend
   function sparkline(p) {
+    // Check if trend data is available
+    if (p.change_7d === null) {
+      return el("div", { class: "sparkline-fallback" }, "7d: no series in snapshot");
+    }
     // Generate mock 7d data points based on 7d change
     const points = 20;
     const change = p.change_7d ?? 0;
@@ -308,14 +286,11 @@
     root.appendChild(filterBar());
 
     // Build table structure
-    const table = el("table", { id: "board-table" },
-      el("caption", {},
-        el("span", { id: "row-count" }, "")
-      ),
+    const table = el("table", { id: "board-table", class: "board-table" },
       el("thead", {},
         el("tr", {},
           el("th", { scope: "col", "data-sort": "rank", "data-label": "Rank" }, "Rank ⇅"),
-          el("th", { scope: "col", "data-sort": "name", "data-label": "Protocol" }, "Protocol ⇅"),
+          el("th", { scope: "col", "data-sort": "name", "data-label": "Name" }, "Name ⇅"),
           el("th", { scope: "col", "data-sort": "category", "data-label": "Category" }, "Category ⇅"),
           el("th", { scope: "col" }, "Chains"),
           el("th", { scope: "col", "data-sort": "tvl_usd", "data-label": "TVL" }, "TVL ⇅"),
@@ -375,6 +350,36 @@
       const target = DATA.board.find(r => r.slug === params.get("detail"));
       if (target) openDetail(target);
     }
+  }
+
+  // Render table body
+  function renderTable() {
+    const tbody = document.querySelector("#board-table tbody");
+    const filtered = DATA.board.filter(matches);
+    filtered.sort((a, b) => {
+      const dir = state.sortDir === "asc" ? 1 : -1;
+      let av = a[state.sortKey];
+      let bv = b[state.sortKey];
+      if (typeof av === "string") av = av.toLowerCase();
+      if (typeof bv === "string") bv = bv.toLowerCase();
+      if (av == null && bv == null) return 0;
+      if (av == null) return dir;
+      if (bv == null) return -dir;
+      if (av < bv) return -dir;
+      if (av > bv) return dir;
+      return 0;
+    });
+    tbody.innerHTML = "";
+    filtered.forEach(p => tbody.appendChild(rowEl(p)));
+    // Update sort indicators
+    $$("#board-table th[data-sort]").forEach(th => {
+      const key = th.dataset.sort;
+      if (state.sortKey === key) {
+        th.textContent = th.dataset.label + " " + (state.sortDir === "asc" ? "▲" : "▼");
+      } else {
+        th.textContent = th.dataset.label + " ⇅";
+      }
+    });
   }
 
   // Methodology section

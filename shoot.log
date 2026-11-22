@@ -1,0 +1,11 @@
+Server listening on http://127.0.0.1:8822
+404: /app.css -> /root/makefun/radar-entry/out/app.css
+404: /app.js -> /root/makefun/radar-entry/out/app.js
+PAGE LOG: Failed to load resource: the server responded with a status of 404 (Not Found)
+PAGE LOG: Failed to load resource: the server responded with a status of 404 (Not Found)
+404: /favicon.ico -> /root/makefun/radar-entry/out/favicon.ico
+PAGE LOG: Failed to load resource: the server responded with a status of 404 (Not Found)
+1-board.png captured
+2-detail.png captured
+3-filtered.png captured
+ERRORS: none
