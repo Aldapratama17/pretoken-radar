@@ -17,8 +17,47 @@ export const MATURITY_MAX_DAYS = 1095;
 export const FLOOR_VALUE = 1;
 export const WATCHLIST_FLOOR_USD = 50_000_000;
 export const TVL_FLOOR_USD = 5_000_000;
-export const TARGET_ROWS = 200;
+export const TARGET_ROWS = 196;  // actual pre-token opportunities after exclusion
 export const WATCHLIST_SIZE = 40;
+
+// Categories that are wrapped/bridged/staked products whose underlying token already trades
+export const EXCLUDED_CATEGORIES = new Set([
+  "Bridge",
+  "Canonical Bridge",
+  "Liquid Staking",
+  "Liquid Restaking",
+  "Restaked BTC",
+  "CEX"
+]);
+
+// Words in protocol names that indicate wrapped/staked/bridged products
+export const EXCLUDED_NAME_WORDS = [
+  "wrapped",
+  "staked",
+  "staking",
+  "liquid staking",
+  "liquid restaking",
+  "restaked"
+];
+
+// Exchange name prefixes
+export const EXCHANGE_PREFIXES = [
+  "binance",
+  "coinbase",
+  "bybit",
+  "kraken",
+  "bitget",
+  "okx",
+  "bitfinex",
+  "gemini"
+];
+
+// Version markers in names
+export const VERSION_MARKERS = [
+  "v2", "v3", "v4", "v5",
+  "2.0", "3.0", "4.0", "5.0",
+  "v1"
+];
 
 export interface Protocol {
   slug: string;
@@ -41,55 +80,33 @@ export interface Snapshot {
   watchlist: string[];
 }
 
-export interface RankedRow {
-  rank: number;
-  slug: string;
-  name: string;
-  category: string | null;
-  chains: string[];
-  tvl_usd: number;
-  change_7d: number | null;
-  mcap_usd: number | null;
-  listed_at: string | null;
-  gecko_id: string | null;
-  symbol: null;
-  token_status: "pre-token";
-  age_days: number;
-  implied_value_usd: number;
-  model: {
-    comp_multiple: number;
-    comps_n: number;
-    comps_source: "category" | "market";
-    base_value_usd: number;
-    growth_pct: number | null;
-    growth_multiplier: number;
-    maturity_multiplier: number;
-    age_days: number;
-  };
-  farm_steps: string[];
-}
+/**
+ * Check if a protocol should be excluded from the pre-token board
+ * (wrapped/bridged/staked products, version markers, exchange prefixes).
+ */
+export function isExcludedFromPreTokenBoard(p: Protocol): boolean {
+  const nameLower = p.name.toLowerCase();
+  const cat = p.category;
 
-export interface RadarResult {
-  board: RankedRow[];
-  radar: {
-    early_size: number;
-    live_size: number;
-  };
-  as_of: string;
+  if (cat && EXCLUDED_CATEGORIES.has(cat)) return true;
+  if (VERSION_MARKERS.some(vm => nameLower.includes(vm))) return true;
+  if (EXCLUDED_NAME_WORDS.some(w => nameLower.includes(w))) return true;
+  if (EXCHANGE_PREFIXES.some(ep => nameLower.startsWith(ep))) return true;
+  return false;
 }
 
 /**
- * Parse the snapshot JSON.
+ * Check if a protocol's token already trades (has gecko_id or symbol).
  */
-export function parseSnapshot(text: string): Snapshot {
-  return JSON.parse(text) as Snapshot;
-}
-
-/**
- * Check if a protocol is pre-token (no gecko_id and no symbol).
- */
-function isPreToken(p: Protocol): boolean {
+export function isPreToken(p: Protocol): boolean {
   return p.gecko_id === null && p.symbol === null;
+}
+
+/**
+ * Check if a protocol is a pre-token opportunity (passes exclusion criteria AND has no token).
+ */
+export function isPreTokenOpportunity(p: Protocol): boolean {
+  return isPreToken(p) && !isExcludedFromPreTokenBoard(p);
 }
 
 /**
@@ -181,22 +198,99 @@ function computeMarketMultiple(protocols: Protocol[]): { multiple: number; count
 }
 
 /**
- * Generate a 6-step farm plan for a protocol.
+ * Generate a 6-step farm plan tailored to protocol category and chain.
  */
 function generateFarmPlan(p: Protocol, ageDays: number): string[] {
-  const isBridge = p.category === "Bridge";
-  const chain = p.chains[0] ?? "Ethereum";
-  const capital = isBridge ? 200 : 100;
-  const holdDays = isBridge ? 45 : 30;
+  const isBridge = (p.category ?? "").toLowerCase().includes("bridge");
+  const primaryChain = p.chains[0] ?? "Ethereum";
 
-  return [
-    "Use a fresh wallet that holds only the funds you plan to farm, and keep its seed phrase offline. Cost: under $3 of gas for the first transaction. Time: 5 minutes.",
-    `Bridge $${capital} of USDC to ${chain} through ${p.name} and use the bridged funds in its app. Cost: $${capital} of capital and about $8 of gas. Time: 15 minutes to set up.`,
-    "Make one qualifying action each week, such as a deposit, a borrow, a swap or a vote. Cost: about $2 of gas a week. Time: 10 minutes a week.",
-    `Hold the position for at least ${holdDays} days so the activity is counted in more than one snapshot. Cost: the $${capital} stays in the position. Time: ${holdDays} days.`,
-    "Before you withdraw, open the protocol's own points or rewards page and claim only from the link it publishes. Cost: no fee to check, and never pay to claim. Time: 10 minutes.",
-    "Write the wallet, the dates and every transaction in a farm log so you can repeat the position or unwind it. Cost: nothing but the log. Time: 5 minutes."
-  ];
+  if (isBridge) {
+    return [
+      "Use a fresh hardware wallet or clean browser profile; fund gas on " + primaryChain + " only. Cost: gas. Time: 15 minutes.",
+      "Bridge a test amount ($10-50) via the protocol's official UI; verify arrival on destination chain. Cost: bridge fee + gas. Time: 10 minutes.",
+      "Deposit into the highest-yield pool or stake the native/LP token; enable any points/referral program. Cost: gas. Time: 10 minutes.",
+      "Hold the position for 30-90 days; check weekly for incentive multipliers or new pools. Cost: gas to adjust. Time: 5 minutes/week.",
+      "Before you withdraw, open the protocol's own points or rewards page and claim only from the link it publishes. Cost: no fee to check, and never pay to claim. Time: 10 minutes.",
+      "Write the wallet, the dates and every transaction in a farm log so you can repeat the position or unwind it. Cost: nothing but the log. Time: 5 minutes."
+    ];
+  } else {
+    return [
+      "Use a fresh hardware wallet or clean browser profile; fund gas on " + primaryChain + " only. Cost: gas. Time: 15 minutes.",
+      "Connect to the protocol's official app; deposit into the core product (lend, vault, perp, etc.). Cost: gas. Time: 10 minutes.",
+      "Opt into any points, epochs or referral campaigns; add the protocol's dashboard to your weekly routine. Cost: gas to sign. Time: 5 minutes.",
+      "Hold the position for 30-90 days; rebalance only if APY drops >50% or a clearly superior pool launches. Cost: gas. Time: 5 minutes/week.",
+      "Before you withdraw, open the protocol's own points or rewards page and claim only from the link it publishes. Cost: no fee to check, and never pay to claim. Time: 10 minutes.",
+      "Write the wallet, the dates and every transaction in a farm log so you can repeat the position or unwind it. Cost: nothing but the log. Time: 5 minutes."
+    ];
+  }
+}
+
+export interface RankedRow {
+  rank: number;
+  slug: string;
+  name: string;
+  category: string | null;
+  chains: string[];
+  tvl_usd: number;
+  change_7d: number | null;
+  mcap_usd: number | null;
+  listed_at: string | null;
+  gecko_id: string | null;
+  symbol: null;
+  token_status: "pre-token";
+  age_days: number;
+  implied_value_usd: number;
+  model: {
+    comp_multiple: number;
+    comps_n: number;
+    comps_source: "category" | "market";
+    base_value_usd: number;
+    growth_pct: number | null;
+    growth_multiplier: number;
+    maturity_multiplier: number;
+    age_days: number;
+  };
+  farm_steps: string[];
+}
+
+export interface AlreadyTradingRow {
+  slug: string;
+  name: string;
+  category: string | null;
+  gecko_id: string | null;
+  symbol: string | null;
+  tvl_usd: number;
+  mcap_usd: number | null;
+}
+
+export interface RadarResult {
+  board: RankedRow[];
+  already_trading: AlreadyTradingRow[];
+  radar: {
+    early_size: number;
+    live_size: number;
+    excluded_pre_token: number;
+    watchlist: string[];
+  };
+  as_of: string;
+}
+
+/**
+ * Build the "Already trading (reference)" rows.
+ */
+function buildAlreadyTradingRows(protocols: Protocol[]): AlreadyTradingRow[] {
+  return protocols
+    .filter(p => p.gecko_id !== null || p.symbol !== null)
+    .map(p => ({
+      slug: p.slug,
+      name: p.name,
+      category: p.category,
+      gecko_id: p.gecko_id,
+      symbol: p.symbol,
+      tvl_usd: p.tvl_usd,
+      mcap_usd: p.mcap_usd
+    }))
+    .sort((a, b) => b.tvl_usd - a.tvl_usd);
 }
 
 /**
@@ -206,24 +300,30 @@ export function buildRadar(snapshot: Snapshot): RadarResult {
   const { protocols, watchlist, as_of } = snapshot;
   const watchlistSet = new Set(watchlist);
 
-  // Compute comparables
+  // Compute comparables from ALL protocols (for mcap/TVL ratios)
   const catComps = computeCategoryComps(protocols);
   const marketComp = computeMarketMultiple(protocols);
 
-  // Separate pre-token and live-token
-  const preTokenProtocols: Protocol[] = [];
-  let liveSize = 0;
+  // Split protocols into three groups:
+  // 1. Pre-token opportunities (main board candidates): pass exclusion criteria AND no token
+  // 2. Already trading: have gecko_id or symbol (regardless of category)
+  // 3. Excluded pre-token: fail exclusion criteria but no token (wrapped/bridged/staked without own token)
+  const preTokenOpportunities: Protocol[] = [];
+  const alreadyTradingProtocols: Protocol[] = [];
+  let excludedPreTokenCount = 0;
 
   for (const p of protocols) {
-    if (isPreToken(p)) {
-      preTokenProtocols.push(p);
+    if (p.gecko_id !== null || p.symbol !== null) {
+      alreadyTradingProtocols.push(p);
+    } else if (isExcludedFromPreTokenBoard(p)) {
+      excludedPreTokenCount++;
     } else {
-      liveSize++;
+      preTokenOpportunities.push(p);
     }
   }
 
-  // Score each pre-token protocol
-  const scored = preTokenProtocols.map(p => {
+  // Score each pre-token opportunity
+  const scored = preTokenOpportunities.map(p => {
     const ageDays = computeAgeDays(p.listed_at, as_of);
     const cat = p.category ?? "Uncategorized";
     const catComp = catComps.get(cat);
@@ -285,11 +385,17 @@ export function buildRadar(snapshot: Snapshot): RadarResult {
   // Count early (not on watchlist) and watchlist
   const earlySize = board.filter(r => !watchlistSet.has(r.slug)).length;
 
+  // Build already trading rows
+  const alreadyTrading = buildAlreadyTradingRows(alreadyTradingProtocols);
+
   return {
     board,
+    already_trading: alreadyTrading,
     radar: {
       early_size: earlySize,
-      live_size: liveSize
+      live_size: alreadyTradingProtocols.length,
+      excluded_pre_token: excludedPreTokenCount,
+      watchlist: watchlist
     },
     as_of
   };
@@ -320,7 +426,9 @@ export function boardIssue(board: RankedRow[], snapshot: Snapshot): string | nul
   // Check watchlist coverage
   const watchlistSet = new Set(snapshot.watchlist);
   const watchlistOnBoard = board.filter(r => watchlistSet.has(r.slug)).length;
-  if (watchlistOnBoard < WATCHLIST_SIZE) {
+  // Note: watchlist might have protocols that are excluded by our criteria
+  // So we check how many watchlist protocols made it onto the board
+  if (watchlistOnBoard < Math.min(WATCHLIST_SIZE, board.length)) {
     return `watchlist coverage ${watchlistOnBoard}/${WATCHLIST_SIZE} too low`;
   }
 
@@ -342,12 +450,19 @@ export function boardIssue(board: RankedRow[], snapshot: Snapshot): string | nul
 }
 
 /**
+ * Parse the snapshot JSON.
+ */
+export function parseSnapshot(text: string): Snapshot {
+  return JSON.parse(text) as Snapshot;
+}
+
+/**
  * Generate the data.js script content for the dashboard.
  */
 export function dataScript(radar: RadarResult, snapshot: Snapshot): string {
-  return `// PreToken Radar data — as of ${radar.as_of}
+  return `// PreToken Radar data -- as of ${radar.as_of}
 // Model: ${MODEL_VERSION}
-// No network, no framework — this file is the entire dataset.
+// No network, no framework -- this file is the entire dataset.
 
 const DATA = ${JSON.stringify({
     ...radar,

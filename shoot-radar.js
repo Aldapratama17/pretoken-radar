@@ -1,7 +1,7 @@
 const puppeteer = require('/root/makefun/node_modules/puppeteer');
 const fs = require('fs');
 const path = require('path');
-const OUT = '/root/makefun/radar-entry/screenshots';
+const OUT = '/root/makefun/radar-entry/out/screenshots';
 fs.mkdirSync(OUT, {recursive: true});
 
 (async () => {
@@ -13,8 +13,9 @@ fs.mkdirSync(OUT, {recursive: true});
   const page = await browser.newPage();
   const errors = [];
   page.on('pageerror', e => {
-    errors.push(String(e).slice(0, 200));
+    errors.push(String(e).slice(0, 500));
     console.log('PAGE ERROR:', e.message);
+    console.log('PAGE ERROR STACK:', e.stack);
   });
   page.on('console', msg => console.log('PAGE LOG:', msg.text()));
 
@@ -72,12 +73,6 @@ fs.mkdirSync(OUT, {recursive: true});
     const tableRows = await page.evaluate(() => document.querySelectorAll('#board-table tbody tr').length);
     console.log('Table rows:', tableRows);
     
-    // Force rendering by evaluating something visible
-    await page.evaluate(() => {
-      const table = document.querySelector('#board-table');
-      if (table) console.log('Table found, rows:', table.querySelectorAll('tbody tr').length);
-    });
-    
     // Check if there's actual visible content
     const visibleCheck = await page.evaluate(() => {
       const table = document.querySelector('#board-table');
@@ -88,43 +83,38 @@ fs.mkdirSync(OUT, {recursive: true});
     });
     console.log('VISIBLE CHECK:', visibleCheck);
     
-    // Take screenshot with fullPage to see what's captured
+    // Check if the main element has content
+    const mainContent = await page.evaluate(() => {
+      const main = document.querySelector('main#board');
+      if (!main) return 'no main';
+      return main.innerHTML.slice(0, 500);
+    });
+    console.log('MAIN CONTENT:', mainContent);
+    
+    // Take screenshot
     await page.screenshot({ path: OUT + '/1-board.png', type: 'png', fullPage: false });
     console.log('1-board.png captured');
 
-    // 2. Detail view - click first row
+    // 2. Detail view - click first row's Details button
     await page.evaluate(() => {
-      const firstLink = document.querySelector('#board-table tbody tr a');
-      if (firstLink) firstLink.click();
+      const firstBtn = document.querySelector('#board-table tbody tr .btn-detail');
+      if (firstBtn) firstBtn.click();
     });
     await new Promise(r => setTimeout(r, 800));
-    // Scroll modal to show Farm Plan
-    await page.evaluate(() => {
-      const panel = document.querySelector('.detail-panel');
-      if (panel) {
-        console.log('Panel scrollHeight:', panel.scrollHeight, 'clientHeight:', panel.clientHeight);
-        panel.scrollTop = panel.scrollHeight;
-      }
-    });
-    await new Promise(r => setTimeout(r, 300));
     
-    // Verify Farm Plan is visible
+    // Verify Farm Plan is visible in modal
     const farmPlanCheck = await page.evaluate(() => {
-      const farmPlan = document.querySelector('.farm-plan');
+      const modal = document.querySelector('#detail-modal');
+      if (!modal || !modal.classList.contains('open')) return 'modal not open';
+      const farmPlan = modal.querySelector('.farm-plan');
       if (!farmPlan) return 'no farm-plan';
       const items = farmPlan.querySelectorAll('li');
       if (items.length === 0) return 'no farm steps';
-      // Check last item visibility
       const lastItem = items[items.length - 1];
-      const rect = lastItem.getBoundingClientRect();
-      const panel = document.querySelector('.detail-panel');
-      const panelRect = panel.getBoundingClientRect();
       return {
         steps: items.length,
         lastItemText: lastItem.innerText.slice(0, 80),
-        lastItemVisible: rect.top >= panelRect.top && rect.bottom <= panelRect.bottom,
-        rect: rect,
-        panelRect: panelRect
+        modalOpen: true
       };
     });
     console.log('FARM PLAN CHECK:', JSON.stringify(farmPlanCheck));
@@ -132,12 +122,34 @@ fs.mkdirSync(OUT, {recursive: true});
     await page.screenshot({ path: OUT + '/2-detail.png', type: 'png', fullPage: false });
     console.log('2-detail.png captured');
 
-    // 3. Filtered view - search for "bridge"
+    // 3. Filtered view - click watchlist filter
     await page.evaluate(() => {
-      const input = document.querySelector('input[type=search]');
-      if (input) { input.value = 'bridge'; input.dispatchEvent(new Event('input')); }
+      const modalClose = document.querySelector('.modal-close');
+      if (modalClose) modalClose.click();
+    });
+    await new Promise(r => setTimeout(r, 300));
+    
+    // Click watchlist filter checkbox
+    await page.evaluate(() => {
+      const wlCheckbox = document.querySelector('.chip-toggle input[type=checkbox]');
+      if (wlCheckbox) { wlCheckbox.checked = true; wlCheckbox.dispatchEvent(new Event('change')); }
     });
     await new Promise(r => setTimeout(r, 800));
+    
+    // Verify filter applied
+    const filteredCheck = await page.evaluate(() => {
+      const table = document.querySelector('#board-table');
+      if (!table) return 'no table';
+      const rows = table.querySelectorAll('tbody tr');
+      const watchlistRows = Array.from(rows).filter(r => r.querySelector('.badge.watchlist'));
+      return {
+        totalRows: rows.length,
+        watchlistRows: watchlistRows.length,
+        firstWL: watchlistRows[0] ? watchlistRows[0].innerText.slice(0, 80) : 'none'
+      };
+    });
+    console.log('FILTERED CHECK:', JSON.stringify(filteredCheck));
+    
     await page.screenshot({ path: OUT + '/3-filtered.png', type: 'png', fullPage: false });
     console.log('3-filtered.png captured');
 
