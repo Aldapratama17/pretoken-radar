@@ -33,7 +33,7 @@ if (!existsSync(inputFile)) {
 const out = arg("output", process.env.MAKEFUN_OUTPUT_DIR ?? "/output");
 
 const snapshot = parseSnapshot(readFileSync(inputFile, "utf8"));
-const { board, radar } = buildRadar(snapshot);
+const { board, radar, as_of } = buildRadar(snapshot);
 const issue = boardIssue(board, snapshot);
 if (issue !== null) {
   process.stderr.write(`token radar: the model wrote a board the gate refuses: ${issue}\n`);
@@ -42,7 +42,7 @@ if (issue !== null) {
 
 mkdirSync(out, { recursive: true });
 writeFileSync(join(out, "board.json"), `${JSON.stringify({ rows: board })}\n`);
-writeFileSync(join(out, "data.js"), dataScript({ board, radar }));
+writeFileSync(join(out, "data.js"), dataScript({ board, radar, as_of }));
 
 /** Copy regular files from one directory to another, skipping dotfiles. */
 function copyFiles(from: string, to: string): string[] {

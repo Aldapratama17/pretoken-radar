@@ -75,6 +75,7 @@ export interface RadarResult {
     early_size: number;
     live_size: number;
   };
+  as_of: string;
 }
 
 /**
@@ -330,7 +331,8 @@ export function buildRadar(snapshot: Snapshot): RadarResult {
     radar: {
       early_size: earlySize,
       live_size: liveSize
-    }
+    },
+    as_of
   };
 }
 
@@ -384,7 +386,7 @@ export function boardIssue(board: RankedRow[], snapshot: Snapshot): string | nul
  * Generate the data.js script content for the dashboard.
  */
 export function dataScript(radar: RadarResult): string {
-  return `// PreToken Radar data — generated at ${new Date().toISOString()}
+  return `// PreToken Radar data — as of ${radar.as_of}
 // Model: ${MODEL_VERSION}
 // No network, no framework — this file is the entire dataset.
 
