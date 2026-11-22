@@ -71,7 +71,7 @@
   function header() {
     return el("header", { class: "header" },
       el("h1", {}, "PreToken Radar"),
-      el("p", { class: "subtitle" }, `Model ${DATA.model_version ?? "v1"} · <strong>${DATA.board.length}</strong> protocols ranked by implied launch value · data: ${DATA.source ?? "—"} · floor $${(DATA.floor_usd / 1e6).toFixed(0)}M`)
+      el("p", { class: "subtitle" }, `Model ${DATA.model_version ?? "v1"} · ${DATA.board.length} protocols ranked by implied launch value · data: ${DATA.source ?? "—"} · floor $${(DATA.floor_usd / 1e6).toFixed(0)}M`)
     );
   }
 
@@ -379,7 +379,11 @@
     // Table
     const tableWrap = el("div", { class: "table-wrap" },
       el("table", { id: "board-table" },
-        el("caption", {}, `Showing <span id="table-count">0</span> of ${DATA.board.length} protocols`),
+        el("caption", {},
+          el("span", {}, "Showing "),
+          el("span", { id: "table-count" }, "0"),
+          el("span", {}, ` of ${DATA.board.length} protocols`)
+        ),
         headerRow(),
         el("tbody", { id: "board-tbody" })
       )
