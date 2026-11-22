@@ -58,7 +58,7 @@
   function header() {
     return el("header", { class: "header" },
       el("h1", {}, "PreToken Radar"),
-      el("p", { class: "subtitle" }, `Model ${DATA.model_version} · ${DATA.board.length} protocols ranked by implied launch value · data: ${DATA.source} · floor $${(DATA.floor_usd / 1e6).toFixed(0)}M`)
+      el("p", { class: "subtitle" }, `Model ${DATA.model_version ?? "v1"} · ${DATA.board.length} protocols ranked by implied launch value · data: ${DATA.source ?? "—"} · floor $${(DATA.floor_usd / 1e6).toFixed(0)}M`)
     );
   }
 
@@ -119,164 +119,102 @@
 
   // Render a table row
   function rowEl(p) {
-    const tr = el("tr", { "data-slug": p.slug });
-    const wl = isWatchlist(p) ? "★" : "";
-    const status = isPreToken(p) ? "pre-token" : "token trades";
-    const statusClass = isPreToken(p) ? "pre-token" : "token-trades";
-    const categoryClass = "cat-" + (p.category ?? "uncategorized").toLowerCase().replace(/[^a-z0-9]+/g, "-");
-
+    const tr = el("tr", {});
     tr.innerHTML = `
       <td class="rank">${p.rank}</td>
-      <td class="name">${el("a", { href: `?detail=${p.slug}` }, p.name).outerHTML} <span class="slug">${p.slug}</span> ${wl ? '<span class="wl-badge" title="watchlist">★</span>' : ""}</td>
-      <td class="category ${categoryClass}"><span class="cat-chip">${p.category ?? "—"}</span></td>
+      <td class="name">${el("a", { href: `?detail=${p.slug}` }, p.name).outerHTML} <span class="slug">${p.slug}</span> ${isWatchlist(p) ? '<span class="wl-badge" title="watchlist">★</span>' : ""}</td>
+      <td class="category">${p.category ?? "—"}</td>
       <td class="chains">${p.chains.join(", ")}</td>
       <td class="tvl">${fmtUsd(p.tvl_usd)}</td>
-      <td class="growth ${p.change_7d !== null && p.change_7d >= 0 ? "positive" : p.change_7d !== null ? "negative" : ""}">${fmtPct(p.change_7d)}</td>
-      <td class="value">${fmtUsd(p.implied_value_usd)}</td>
-      <td class="age">${p.age_days} days</td>
-      <td class="status ${statusClass}">${status}</td>
+      <td class="change ${p.change_7d !== null && p.change_7d >= 0 ? "positive" : "negative"}">${fmtPct(p.change_7d)}</td>
+      <td class="implied-value">${fmtUsd(p.implied_value_usd)}</td>
+      <td class="age">${p.age_days}d</td>
+      <td class="status ${isPreToken(p) ? "pre-token" : "token-trades"}">${isPreToken(p) ? "pre-token" : "token trades"}</td>
     `;
-    tr.addEventListener("click", e => {
+    tr.addEventListener("click", (e) => {
       if (e.target.tagName !== "A") openDetail(p);
     });
     return tr;
   }
 
-  // Sort and render table
+  // Render table
   function renderTable() {
-    const tbody = $("#board-table tbody");
     const filtered = DATA.board.filter(matches);
-
-    // Sort
     filtered.sort((a, b) => {
-      let av = a[state.sortKey];
-      let bv = b[state.sortKey];
-      if (av === null) av = -Infinity;
-      if (bv === null) bv = -Infinity;
-      const dir = state.sortDir === "asc" ? 1 : -1;
-      if (typeof av === "string") return av.localeCompare(bv) * dir;
-      return (av - bv) * dir;
+      let aVal = a[state.sortKey];
+      let bVal = b[state.sortKey];
+      if (aVal === null) aVal = -Infinity;
+      if (bVal === null) bVal = -Infinity;
+      if (state.sortDir === "asc") return aVal > bVal ? 1 : -1;
+      return aVal < bVal ? 1 : -1;
     });
 
+    const tbody = $("#board-table tbody");
     tbody.innerHTML = "";
     filtered.forEach(p => tbody.appendChild(rowEl(p)));
 
-    // Update sort arrows
+    $("#row-count").textContent = `${filtered.length} / ${DATA.board.length} protocols`;
+
+    // Update sort indicators
     $$("#board-table th[data-sort]").forEach(th => {
-      th.textContent = th.dataset.label + " " + getSortArrow(th.dataset.sort);
+      const key = th.dataset.sort;
+      const label = th.dataset.label;
+      th.innerHTML = `${label} ${getSortArrow(key)}`;
+      th.dataset.sort = key;
+      th.dataset.label = label;
     });
-
-    // Update row count
-    const countEl = $("#row-count");
-    if (countEl) countEl.textContent = `${filtered.length} / ${DATA.board.length} protocols`;
-
-    // Update methodology footnote reference
-    const methEl = $("#model-footnote");
-    if (methEl) methEl.textContent = `Value model: buildRadar() in lib/model.ts — TVL × comp multiple × growth multiplier × maturity multiplier → implied value`;
   }
 
-  // Build methodology section
-  function methodology() {
-    return el("section", { class: "methodology" },
-      el("h2", {}, "How Implied Value Is Computed"),
-      el("p", { id: "model-footnote" }, `Value model: buildRadar() in lib/model.ts — TVL × comp multiple × growth multiplier × maturity multiplier → implied value`),
-      el("ol", {},
-        el("li", {}, el("strong", {}, "TVL × comp multiple"), " → base value. Comps are median mcap/TVL from live-token protocols in the same category (min 5); fallback to market-wide median."),
-        el("li", {}, el("strong", {}, "Growth multiplier"), " → 1 + (clamped 7d change / 100) × 0.5. 7d change clamped to [-60%, +120%]."),
-        el("li", {}, el("strong", {}, "Maturity multiplier"), " → linear from 0.7 at day 0 to 1.0 at 1095 days (3 years)."),
-        el("li", {}, el("strong", {}, "Floor"), " → $1 minimum.")
-      )
+  // Value bar chart (simplified)
+  function valueBarChart(p) {
+    const m = p.model;
+    const bars = [
+      { label: "Base TVL × comp", value: m.base_value_usd, color: "#666" },
+      { label: "× growth", value: m.base_value_usd * m.growth_multiplier, color: m.growth_multiplier >= 1 ? "#2a7" : "#c44" },
+      { label: "× maturity", value: m.base_value_usd * m.growth_multiplier * m.maturity_multiplier, color: "#46a" },
+      { label: "Implied", value: p.implied_value_usd, color: "#000" }
+    ];
+    const maxVal = Math.max(...bars.map(b => b.value));
+    const wrap = el("div", { class: "value-bars" });
+    bars.forEach(b => {
+      const pct = (b.value / maxVal * 100).toFixed(1);
+      wrap.appendChild(el("div", { class: "bar-row" },
+        el("span", { class: "bar-label" }, b.label),
+        el("div", { class: "bar-track" },
+          el("div", { class: "bar-fill", style: `width:${pct}%;background:${b.color}` })
+        ),
+        el("span", { class: "bar-value" }, fmtUsd(b.value))
+      ));
+    });
+    return wrap;
+  }
+
+  // Sparkline
+  function sparkline(p) {
+    // Generate mock 7d data points based on 7d change
+    const points = 20;
+    const change = p.change_7d ?? 0;
+    const base = p.tvl_usd / (1 + change / 100);
+    const data = Array.from({ length: points }, (_, i) => {
+      const t = i / (points - 1);
+      const noise = (Math.sin(i * 0.7) * 0.5 + Math.cos(i * 1.3) * 0.3) * 0.02;
+      return base * (1 + (change / 100) * t + noise);
+    });
+    const min = Math.min(...data);
+    const max = Math.max(...data);
+    const range = max - min || 1;
+    const w = 280, h = 60;
+    const path = data.map((v, i) => {
+      const x = (i / (points - 1)) * w;
+      const y = h - ((v - min) / range) * h;
+      return `${i === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
+    }).join(" ");
+    return el("svg", { class: "sparkline", viewBox: `0 0 ${w} ${h}`, width: w, height: h },
+      el("path", { d: path, fill: "none", stroke: change >= 0 ? "#2a7" : "#c44", "stroke-width": 2 })
     );
   }
 
-  // Create horizontal bar chart for value math
-  function valueBarChart(p) {
-    const m = p.model;
-    const steps = [
-      { label: "TVL", value: p.tvl_usd, color: "#3b82f6" },
-      { label: "× Comp", value: m.base_value_usd, color: "#06b6d4" },
-      { label: "× Growth", value: Math.round(m.base_value_usd * m.growth_multiplier), color: "#00d4aa" },
-      { label: "× Maturity", value: p.implied_value_usd, color: "#00d4aa" }
-    ];
-    const maxVal = Math.max(...steps.map(s => s.value));
-    const container = el("div", { class: "value-bar-chart" });
-    steps.forEach((step, i) => {
-      const pct = (step.value / maxVal * 100).toFixed(1);
-      const bar = el("div", { class: "bar-row" },
-        el("span", { class: "bar-label" }, step.label),
-        el("div", { class: "bar-track" },
-          el("div", { class: "bar-fill", style: `width:${pct}%; background:${step.color}` },
-            el("span", { class: "bar-value" }, fmtUsd(step.value))
-          )
-        )
-      );
-      container.appendChild(bar);
-    });
-    return container;
-  }
-
-  // Create sparkline for 7d TVL history (simulated from snapshot if available)
-  function sparkline(p) {
-    // The snapshot doesn't have daily TVL history, but we can create a small deterministic
-    // sparkline using the 7d change % as a guide - showing current vs 7d ago
-    const change = p.change_7d;
-    const canvas = document.createElement("canvas");
-    canvas.width = 120;
-    canvas.height = 40;
-    canvas.className = "sparkline";
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return canvas;
-
-    // Generate deterministic pseudo-history based on protocol slug
-    let hash = 0;
-    for (let i = 0; i < p.slug.length; i++) {
-      hash = ((hash << 5) - hash) + p.slug.charCodeAt(i);
-      hash |= 0;
-    }
-    const rng = () => {
-      hash = (hash * 1664525 + 1013904223) >>> 0;
-      return hash / 4294967296;
-    };
-
-    // Create 8 points from 7d ago to now
-    const points = [];
-    const now = p.tvl_usd;
-    const weekAgo = change !== null ? now / (1 + change / 100) : now;
-    for (let i = 0; i < 8; i++) {
-      const t = i / 7;
-      const base = weekAgo + (now - weekAgo) * t;
-      // Add deterministic noise
-      const noise = (rng() - 0.5) * 0.02 * now;
-      points.push(base + noise);
-    }
-
-    const minVal = Math.min(...points);
-    const maxVal = Math.max(...points);
-    const range = maxVal - minVal || 1;
-
-    ctx.strokeStyle = change !== null && change >= 0 ? "#00d4aa" : "#ff4d6a";
-    ctx.lineWidth = 2;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.beginPath();
-    points.forEach((v, i) => {
-      const x = (i / (points.length - 1)) * 120;
-      const y = 40 - ((v - minVal) / range) * 34;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
-
-    // Add current value label
-    ctx.font = "10px ui-monospace, monospace";
-    ctx.fillStyle = "#9aa3ad";
-    ctx.textAlign = "right";
-    ctx.fillText(fmtUsd(now), 118, 38);
-
-    return canvas;
-  }
-
-  // Build protocol detail view
+  // Detail view
   function detailEl(p) {
     const closeBtn = el("button", { class: "close-btn", "aria-label": "Close detail" }, "✕");
     closeBtn.addEventListener("click", closeDetail);
@@ -301,7 +239,7 @@
       el("div", { class: "detail-panel" },
         el("div", { class: "detail-header" },
           el("div", {},
-            el("h2", {}, p.name, " ", wl),
+            el("h2", {}, p.name ?? p.slug, " ", wl),
             el("span", { class: "detail-slug" }, p.slug),
             el("span", { class: "status " + statusClass }, status)
           ),
@@ -408,7 +346,7 @@
 
     renderTable();
     root.appendChild(methodology());
-    root.appendChild(el("footer", {}, `PreToken Radar · model ${DATA.model_version} · data: ${DATA.source} · floor $${(DATA.floor_usd / 1e6).toFixed(0)}M · no network, no framework`));
+    root.appendChild(el("footer", {}, `PreToken Radar · model ${DATA.model_version ?? "v1"} · data: ${DATA.source ?? "—"} · floor $${(DATA.floor_usd / 1e6).toFixed(0)}M · no network, no framework`));
 
     // Deep link handling
     const params = new URLSearchParams(location.search);
@@ -437,6 +375,30 @@
       const target = DATA.board.find(r => r.slug === params.get("detail"));
       if (target) openDetail(target);
     }
+  }
+
+  // Methodology section
+  function methodology() {
+    return el("section", { class: "methodology", id: "methodology" },
+      el("h2", {}, "Methodology"),
+      el("p", {}, "PreToken Radar ranks pre-token protocols by implied launch value: a model-derived estimate of what a protocol's token could be worth at launch, based on TVL, category comparables, growth trajectory, and maturity."),
+      el("h3", {}, "Formula"),
+      el("pre", {}, `implied_value = max(1, round(TVL × comp_multiple × growth_multiplier × maturity_multiplier))`),
+      el("h3", {}, "Components"),
+      el("dl", {},
+        el("dt", {}, "TVL"), el("dd", {}, "Total Value Locked from the snapshot (USD)."),
+        el("dt", {}, "Comp Multiple"), el("dd", {}, "Median mcap/TVL of live-token protocols in the same category (min 5 comps), or market-wide median if insufficient."),
+        el("dt", {}, "Growth Multiplier"), el("dd", {}, `1 + (clamp(7d_change, -60, 120) / 100) × 0.5. Rewards momentum, penalizes decline.`),
+        el("dt", {}, "Maturity Multiplier"), el("dd", {}, "Linear from 0.7 at day 0 to 1.0 at 1095 days (3 years). Older protocols get a modest boost."),
+        el("dt", {}, "Floor"), el("dd", {}, "Implied value never below $1.")
+      ),
+      el("h3", {}, "Pre-token Definition"),
+      el("p", {}, "A protocol is pre-token if it has no Coingecko ID and no trading symbol. Only pre-token protocols appear on the board by default; disable the filter to see live tokens too."),
+      el("h3", {}, "Watchlist"),
+      el("p", {}, `${DATA.radar?.watchlist?.length ?? 0} hand-picked protocols flagged for closer tracking. Watchlist protocols are guaranteed a spot on the board if they qualify as pre-token.`),
+      el("h3", {}, "Farm Plan"),
+      el("p", {}, "Each protocol gets a 6-step generic farm plan tailored to its category (Bridge vs non-Bridge) and primary chain. Steps cover wallet hygiene, bridging/depositing, weekly actions, holding period, claiming rewards, and logging.")
+    );
   }
 
   // Run init when DOM is ready

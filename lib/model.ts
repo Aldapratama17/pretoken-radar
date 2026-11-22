@@ -177,66 +177,25 @@ function computeMarketMultiple(protocols: Protocol[]): { multiple: number; count
   const median = sorted.length % 2 === 0
     ? (sorted[mid - 1] + sorted[mid]) / 2
     : sorted[mid];
-  return { multiple: median, count: ratios.length };
+  return { multiple: median, count: sorted.length };
 }
 
 /**
  * Generate a 6-step farm plan for a protocol.
  */
 function generateFarmPlan(p: Protocol, ageDays: number): string[] {
-  const cat = (p.category ?? "").toLowerCase();
+  const isBridge = p.category === "Bridge";
   const chain = p.chains[0] ?? "Ethereum";
-  const isWatchlist = false; // Will be set by caller if needed
-
-  // Capital scales with TVL tier
-  let capital = 200;
-  if (p.tvl_usd >= 500_000_000) capital = 200;
-  else if (p.tvl_usd >= 100_000_000) capital = 200;
-  else if (p.tvl_usd >= 50_000_000) capital = 200;
-  else if (p.tvl_usd >= 10_000_000) capital = 100;
-  else capital = 60;
-
-  // Hold time scales with age (older = more established = longer hold)
-  let holdDays = 30;
-  if (ageDays >= 730) holdDays = 45;
-  else if (ageDays >= 365) holdDays = 30;
-  else holdDays = 30;
-
-  // Category-aware action
-  let action = "";
-  if (cat.includes("lend")) {
-    action = `Supply $${capital} to ${p.name}'s lending market on ${chain} and keep the position open.`;
-  } else if (cat.includes("dex") || cat.includes("yield") || cat.includes("leveraged farm")) {
-    action = `Provide $${capital} of liquidity to ${p.name}'s main pool on ${chain} and keep the position open.`;
-  } else if (cat.includes("bridge")) {
-    action = `Bridge $${capital} of USDC to ${chain} through ${p.name} and use the bridged funds in its app.`;
-  } else if (cat.includes("staking") || cat.includes("restak") || cat.includes("liquid stak")) {
-    action = `Stake $${capital} of the chain's staking asset through ${p.name} and keep the receipt.`;
-  } else if (cat.includes("perpetual") || cat.includes("derivative")) {
-    action = `Deposit $${capital} of USDC as margin on ${p.name} and open one small hedge.`;
-  } else if (cat.includes("prediction")) {
-    action = `Fund $${capital} and place one market position on ${p.name}.`;
-  } else if (cat.includes("curator") || cat.includes("allocator")) {
-    action = `Deposit $${capital} into a ${p.name} vault on ${chain} and keep the shares.`;
-  } else if (cat.includes("stable") || cat.includes("cdp")) {
-    action = `Mint or deposit $${capital} of the stable asset through ${p.name} on ${chain}.`;
-  } else if (cat.includes("rwa")) {
-    action = `Mint $${capital} of the protocol's yield asset on ${chain} and hold it.`;
-  } else if (cat.includes("insurance")) {
-    action = `Buy $${capital} of cover from ${p.name} on ${chain} and keep the policy.`;
-  } else {
-    action = `Deposit $${capital} of USDC into ${p.name} on ${chain} and keep the position open.`;
-  }
-
-  const gasEstimate = capital >= 150 ? 8 : 4;
+  const capital = isBridge ? 200 : 100;
+  const holdDays = isBridge ? 45 : 30;
 
   return [
-    `Use a fresh wallet that holds only the funds you plan to farm, and keep its seed phrase offline. Cost: under $3 of gas for the first transaction. Time: 5 minutes.`,
-    `${action} Cost: $${capital} of capital and about $${gasEstimate} of gas. Time: 15 minutes to set up.`,
-    `Make one qualifying action each week, such as a deposit, a borrow, a swap or a vote. Cost: about $2 of gas a week. Time: 10 minutes a week.`,
+    "Use a fresh wallet that holds only the funds you plan to farm, and keep its seed phrase offline. Cost: under $3 of gas for the first transaction. Time: 5 minutes.",
+    `Bridge $${capital} of USDC to ${chain} through ${p.name} and use the bridged funds in its app. Cost: $${capital} of capital and about $8 of gas. Time: 15 minutes to set up.`,
+    "Make one qualifying action each week, such as a deposit, a borrow, a swap or a vote. Cost: about $2 of gas a week. Time: 10 minutes a week.",
     `Hold the position for at least ${holdDays} days so the activity is counted in more than one snapshot. Cost: the $${capital} stays in the position. Time: ${holdDays} days.`,
-    `Before you withdraw, open the protocol's own points or rewards page and claim only from the link it publishes. Cost: no fee to check, and never pay to claim. Time: 10 minutes.`,
-    `Write the wallet, the dates and every transaction in a farm log so you can repeat the position or unwind it. Cost: nothing but the log. Time: 5 minutes.`
+    "Before you withdraw, open the protocol's own points or rewards page and claim only from the link it publishes. Cost: no fee to check, and never pay to claim. Time: 10 minutes.",
+    "Write the wallet, the dates and every transaction in a farm log so you can repeat the position or unwind it. Cost: nothing but the log. Time: 5 minutes."
   ];
 }
 
@@ -385,12 +344,17 @@ export function boardIssue(board: RankedRow[], snapshot: Snapshot): string | nul
 /**
  * Generate the data.js script content for the dashboard.
  */
-export function dataScript(radar: RadarResult): string {
+export function dataScript(radar: RadarResult, snapshot: Snapshot): string {
   return `// PreToken Radar data — as of ${radar.as_of}
 // Model: ${MODEL_VERSION}
 // No network, no framework — this file is the entire dataset.
 
-const DATA = ${JSON.stringify(radar, null, 2)};
+const DATA = ${JSON.stringify({
+    ...radar,
+    model_version: MODEL_VERSION,
+    floor_usd: snapshot.floor_usd,
+    source: snapshot.source
+  }, null, 2)};
 
 // Expose for the page
 if (typeof window !== 'undefined') window.DATA = DATA;

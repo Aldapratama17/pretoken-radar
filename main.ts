@@ -42,7 +42,7 @@ if (issue !== null) {
 
 mkdirSync(out, { recursive: true });
 writeFileSync(join(out, "board.json"), `${JSON.stringify({ rows: board })}\n`);
-writeFileSync(join(out, "data.js"), dataScript({ board, radar, as_of }));
+writeFileSync(join(out, "data.js"), dataScript({ board, radar, as_of }, snapshot));
 
 /** Copy regular files from one directory to another, skipping dotfiles. */
 function copyFiles(from: string, to: string): string[] {
