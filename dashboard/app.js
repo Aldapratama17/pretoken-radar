@@ -213,7 +213,7 @@
           ),
           el("tbody", { id: "board-tbody" })
         ),
-        el("div", { class: "table-count" }, "Showing <span id=\"table-count\">0</span> of " + DATA.board.length + " protocols")
+        el("div", { class: "table-count", id: "table-count" }, "Showing 0 of " + DATA.board.length + " protocols")
       ),
       // Already trading section (collapsible)
       el("section", { class: "already-trading", id: "already-trading", style: "display:none;" },
