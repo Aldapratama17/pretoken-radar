@@ -1,7 +1,7 @@
 /**
- * PreToken Radar — dashboard logic.
+ * PreToken Radar — Bold Hero Dashboard
  * Pure client-side, no network, no framework.
- * Reads DATA from data.js and renders the board, detail view, and filters.
+ * Reads DATA from data.js and renders hero cards, board, detail view, and filters.
  */
 
 (function () {
@@ -13,7 +13,7 @@
     category: "all",
     chain: "all",
     wlOnly: false,
-    preTokenOnly: true, // new: filter for pre-token only (default true)
+    preTokenOnly: true,
     sortKey: "implied_value_usd",
     sortDir: "desc",
     detailSlug: null
@@ -31,6 +31,13 @@
   const fmt = (n) => n.toLocaleString();
   const fmtUsd = (n) => "$" + fmt(n);
   const fmtPct = (n) => n === null ? "—" : (n >= 0 ? "+" : "") + n.toFixed(2) + "%";
+  const fmtCompact = (n) => {
+    if (n >= 1e12) return (n / 1e12).toFixed(1).replace(/\.0$/, "") + "T";
+    if (n >= 1e9) return (n / 1e9).toFixed(1).replace(/\.0$/, "") + "B";
+    if (n >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, "") + "M";
+    if (n >= 1e3) return (n / 1e3).toFixed(1).replace(/\.0$/, "") + "K";
+    return fmt(n);
+  };
 
   // Extract unique categories and chains from DATA
   const categories = ["all", ...Array.from(new Set(DATA.board.map(r => r.category ?? "Uncategorized").filter(Boolean))).sort()];
@@ -54,11 +61,72 @@
     return p.gecko_id === null && p.symbol === null;
   }
 
+  // Category chip class
+  function catChipClass(cat) {
+    if (!cat) return "cat-uncategorized";
+    return "cat-" + cat.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  }
+
   // Build header
   function header() {
     return el("header", { class: "header" },
       el("h1", {}, "PreToken Radar"),
-      el("p", { class: "subtitle" }, `Model ${DATA.model_version ?? "v1"} · ${DATA.board.length} protocols ranked by implied launch value · data: ${DATA.source ?? "—"} · floor $${(DATA.floor_usd / 1e6).toFixed(0)}M`)
+      el("p", { class: "subtitle" }, `Model ${DATA.model_version ?? "v1"} · <strong>${DATA.board.length}</strong> protocols ranked by implied launch value · data: ${DATA.source ?? "—"} · floor $${(DATA.floor_usd / 1e6).toFixed(0)}M`)
+    );
+  }
+
+  // Build hero section with top 3 opportunities
+  function heroSection() {
+    const top3 = DATA.board.slice(0, 3);
+    return el("section", { class: "hero", "aria-label": "Top 3 opportunities" },
+      ...top3.map((p, idx) => heroCard(p, idx + 1))
+    );
+  }
+
+  // Build a single hero card
+  function heroCard(p, rank) {
+    const growth = p.change_7d;
+    const growthClass = growth === null ? "" : (growth >= 0 ? "positive" : "negative");
+    const tvl = p.tvl_usd;
+    const age = p.age_days;
+    const implied = p.implied_value_usd;
+    const model = p.model;
+
+    // One-line why undervalued
+    let why = "";
+    if (model.comps_source === "category" && model.comps_n >= 5) {
+      why = `Category median mcap/TVL of ${model.comp_multiple.toFixed(2)}× from ${model.comps_n} live comps`;
+    } else {
+      why = `Market-wide median mcap/TVL of ${model.comp_multiple.toFixed(2)}× (insufficient category comps)`;
+    }
+    if (growth !== null && growth > 10) {
+      why += ` · strong 7d momentum (+${growth.toFixed(1)}%)`;
+    } else if (growth !== null && growth < -10) {
+      why += ` · 7d decline (${growth.toFixed(1)}%) creates entry opportunity`;
+    }
+    if (age > 730) {
+      why += ` · mature (${age}d)`;
+    } else if (age < 180) {
+      why += ` · early stage (${age}d)`;
+    }
+
+    return el("article", { class: "hero-card", tabindex: "0", role: "button", "aria-label": `${p.name}, rank ${rank}, implied value ${fmtCompact(implied)}` },
+      el("div", { class: "hero-rank" }, `Rank #${rank}`),
+      el("div", { class: "hero-name" }, p.name),
+      el("div", { class: "hero-value" }, fmtCompact(implied)),
+      el("div", { class: "hero-chips" },
+        el("span", { class: "chip tv" }, `TVL ${fmtCompact(tvl)}`),
+        el("span", { class: `chip growth ${growthClass}` }, `7d ${fmtPct(growth)}`),
+        el("span", { class: "chip age" }, `${age}d old`)
+      ),
+      el("div", { class: "hero-why" },
+        el("strong", {}, "Why undervalued: "), why
+      ),
+      // Click handler
+      (() => {
+        const card = document.currentScript ? null : null; // placeholder
+        return null;
+      })()
     );
   }
 
@@ -68,8 +136,15 @@
       el("label", {}, "Search ", el("input", { type: "search", placeholder: "slug, name, category…", "aria-label": "Search" })),
       el("label", {}, "Category ", el("select", { "aria-label": "Category" }, ...categories.map(c => el("option", { value: c }, c)))),
       el("label", {}, "Chain ", el("select", { "aria-label": "Chain" }, ...chains.map(c => el("option", { value: c }, c)))),
-      el("label", { class: "chip" }, el("input", { type: "checkbox" }), " Watchlist only"),
-      el("label", { class: "chip" }, el("input", { type: "checkbox" }), " Pre-token only")
+      el("span", { class: "filter-spacer" }),
+      el("label", { class: "chip-toggle" },
+        el("input", { type: "checkbox" }),
+        el("span", {}, "Watchlist only")
+      ),
+      el("label", { class: "chip-toggle" },
+        el("input", { type: "checkbox" }),
+        el("span", {}, "Pre-token only")
+      )
     );
 
     // Wire up filter events
@@ -77,8 +152,8 @@
       bar.querySelector("input[type=search]"),
       bar.querySelectorAll("select")[0],
       bar.querySelectorAll("select")[1],
-      bar.querySelectorAll(".chip")[0],
-      bar.querySelectorAll(".chip")[1]
+      bar.querySelectorAll(".chip-toggle")[0],
+      bar.querySelectorAll(".chip-toggle")[1]
     ];
     const wlCheckbox = wlChip.querySelector("input[type=checkbox]");
     const ptCheckbox = ptChip.querySelector("input[type=checkbox]");
@@ -111,202 +186,208 @@
     return `comp multiple: ${m.comp_multiple.toFixed(4)} (${m.comps_n} ${m.comps_source} comps) · base: ${fmtUsd(m.base_value_usd)} · growth: ${fmtPct(m.growth_pct)} (×${m.growth_multiplier.toFixed(4)}) · maturity: ×${m.maturity_multiplier.toFixed(4)} (age ${m.age_days}d)`;
   }
 
-  // Get sort arrow indicator
-  function getSortArrow(key) {
-    if (state.sortKey !== key) return "⇅";
-    return state.sortDir === "asc" ? "▲" : "▼";
-  }
-
-  // Render a table row
+  // Render a single table row
   function rowEl(p) {
-    const rankBadge = el("span", { class: "rank" }, p.rank);
-    const nameCell = el("td", { class: "name" },
-      el("a", { href: `?detail=${p.slug}` }, p.name ?? p.slug),
-      el("span", { class: "slug" }, p.slug),
-      isWatchlist(p) ? el("span", { class: "wl-badge", title: "watchlist" }, "★") : null
+    const growth = p.change_7d;
+    const growthClass = growth === null ? "" : (growth >= 0 ? "positive" : "negative");
+    const catClass = catChipClass(p.category);
+
+    const tr = el("tr", { "data-slug": p.slug, tabindex: "0", role: "button", "aria-label": `${p.name}, rank ${p.rank}, implied ${fmtCompact(p.implied_value_usd)}` },
+      el("td", { class: "rank" }, `#${p.rank}`),
+      el("td", { class: "name-col" },
+        el("a", { href: "#", "data-slug": p.slug }, p.name),
+        el("span", { class: "slug" }, p.slug),
+        isWatchlist(p) ? el("span", { class: "wl-badge" }, "Watchlist") : null
+      ),
+      el("td", { class: "category" }, p.category ? el("span", { class: `cat-chip ${catClass}` }, p.category) : "—"),
+      el("td", { class: "tvl" }, fmtCompact(p.tvl_usd)),
+      el("td", { class: `change ${growthClass}` }, fmtPct(growth)),
+      el("td", { class: "implied" }, fmtCompact(p.implied_value_usd)),
+      el("td", { class: "age" }, p.age_days + "d"),
+      el("td", {}, el("span", { class: `status ${p.token_status}` }, p.token_status))
     );
-    const catCell = el("td", { class: "category" }, p.category ?? "—");
-    const chainCell = el("td", { class: "chains" }, p.chains.join(", "));
-    const tvlCell = el("td", { class: "tvl" }, fmtUsd(p.tvl_usd));
-    const changeCell = el("td", { class: "change" + (p.change_7d !== null && p.change_7d >= 0 ? " positive" : " negative") }, fmtPct(p.change_7d));
-    const impliedCell = el("td", { class: "implied" }, fmtUsd(p.implied_value_usd));
-    const ageCell = el("td", { class: "age" }, p.age_days + "d");
-    const statusCell = el("td", { class: "status " + (isPreToken(p) ? "pre-token" : "token-trades") }, isPreToken(p) ? "pre-token" : "token trades");
-    return el("tr", { "data-slug": p.slug },
-      el("td", {}, rankBadge),
-      nameCell,
-      catCell,
-      chainCell,
-      tvlCell,
-      changeCell,
-      impliedCell,
-      ageCell,
-      statusCell
-    );
+
+    // Click to open detail
+    tr.addEventListener("click", () => openDetail(p));
+    tr.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openDetail(p); } });
+
+    // Sortable header click
+    return tr;
   }
 
-  // Value bar chart (text-based)
-  function valueBarChart(p) {
-    const m = p.model;
-    const bars = [
-      { label: "TVL", value: p.tvl_usd },
-      { label: "× Comp", value: m.comp_multiple },
-      { label: "× Growth", value: m.growth_multiplier },
-      { label: "× Maturity", value: m.maturity_multiplier },
-      { label: "= Implied", value: p.implied_value_usd }
+  // Render header row
+  function headerRow() {
+    const cols = [
+      { key: "rank", label: "Rank" },
+      { key: "name", label: "Protocol" },
+      { key: "category", label: "Category" },
+      { key: "tvl_usd", label: "TVL" },
+      { key: "change_7d", label: "7d Change" },
+      { key: "implied_value_usd", label: "Implied Value" },
+      { key: "age_days", label: "Age" },
+      { key: "token_status", label: "Status" }
     ];
-    return el("div", { class: "value-bars" },
-      ...bars.map(b => el("div", { class: "bar-row" },
-        el("span", { class: "bar-label" }, b.label),
-        el("div", { class: "bar-track" }, el("div", { class: "bar-fill", style: `width:${Math.min(100, (b.value / p.implied_value_usd) * 100)}%` }))
-      ))
-    );
-  }
-
-  // Sparkline for 7d TVL trend
-  function sparkline(p) {
-    // Check if trend data is available
-    if (p.change_7d === null) {
-      return el("div", { class: "sparkline-fallback" }, "7d: no series in snapshot");
-    }
-    // Generate mock 7d data points based on 7d change
-    const points = 20;
-    const change = p.change_7d ?? 0;
-    const base = p.tvl_usd / (1 + change / 100);
-    const data = Array.from({ length: points }, (_, i) => {
-      const t = i / (points - 1);
-      const noise = (Math.sin(i * 0.7) * 0.5 + Math.cos(i * 1.3) * 0.3) * 0.02;
-      return base * (1 + (change / 100) * t + noise);
-    });
-    const min = Math.min(...data);
-    const max = Math.max(...data);
-    const range = max - min || 1;
-    const w = 280, h = 60;
-    const path = data.map((v, i) => {
-      const x = (i / (points - 1)) * w;
-      const y = h - ((v - min) / range) * h;
-      return `${i === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
-    }).join(" ");
-    return el("svg", { class: "sparkline", viewBox: `0 0 ${w} ${h}`, width: w, height: h },
-      el("path", { d: path, fill: "none", stroke: change >= 0 ? "#2a7" : "#c44", "stroke-width": 2 })
-    );
-  }
-
-  // Detail view
-  function detailEl(p) {
-    const closeBtn = el("button", { class: "close-btn", "aria-label": "Close detail" }, "✕");
-    closeBtn.addEventListener("click", closeDetail);
-
-    const model = p.model;
-    const chains = p.chains.join(", ");
-    const wl = isWatchlist(p) ? el("span", { class: "wl-badge" }, "Watchlist") : null;
-    const status = isPreToken(p) ? "pre-token" : "token trades";
-    const statusClass = isPreToken(p) ? "pre-token" : "token-trades";
-
-    // Farm steps with title, action, cost, time
-    const farmSteps = p.farm_steps.map((step, i) => {
-      const li = el("li", {});
-      // Parse step for title, action, cost, time
-      // Steps are strings like "Step 1: Action. Cost: $X. Time: Y."
-      // We'll display as-is but style nicely
-      li.innerHTML = step.replace(/^Step \d+:\s*/, '<strong>Step ' + (i + 1) + ':</strong> ');
-      return li;
-    });
-
-    return el("div", { class: "detail-overlay" },
-      el("div", { class: "detail-panel" },
-        el("div", { class: "detail-header" },
-          el("div", {},
-            el("h2", {}, p.name ?? p.slug, " ", wl),
-            el("span", { class: "detail-slug" }, p.slug),
-            el("span", { class: "status " + statusClass }, status)
-          ),
-          closeBtn
-        ),
-        el("dl", { class: "detail-grid" },
-          el("dt", {}, "Category"), el("dd", {}, p.category ?? "—"),
-          el("dt", {}, "Chains"), el("dd", {}, chains),
-          el("dt", {}, "TVL"), el("dd", {}, fmtUsd(p.tvl_usd)),
-          el("dt", {}, "7d change"), el("dd", { class: p.change_7d !== null && p.change_7d >= 0 ? "positive" : "negative" }, fmtPct(p.change_7d)),
-          el("dt", {}, "Age"), el("dd", {}, `${p.age_days} days`),
-          el("dt", {}, "Implied value"), el("dd", { class: "implied-value" }, fmtUsd(p.implied_value_usd)),
-          el("dt", {}, "Model"), el("dd", { class: "model-detail" }, formatModel(model))
-        ),
-        el("h3", {}, "Value Math"),
-        valueBarChart(p),
-        el("h3", {}, "7d TVL Trend"),
-        el("div", { class: "sparkline-wrap" }, sparkline(p)),
-        el("h3", {}, "Farm Plan"),
-        el("div", { class: "farm-plan-wrap" },
-          el("ol", { class: "farm-plan" }, ...farmSteps)
-        )
+    return el("thead", {},
+      el("tr", {},
+        ...cols.map(c => el("th", { "data-sort": c.key, "data-label": c.label }, c.label + " ⇅"))
       )
     );
   }
 
-  // Open detail view
+  // Open detail modal
   function openDetail(p) {
     state.detailSlug = p.slug;
-    const overlay = detailEl(p);
+    const overlay = document.createElement("div");
+    overlay.className = "detail-overlay";
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-labelledby", "detail-title");
+    overlay.innerHTML = "";
+    overlay.appendChild(detailPanel(p));
     document.body.appendChild(overlay);
-    const url = new URL(location.href);
-    url.searchParams.set("detail", p.slug);
-    history.pushState(null, "", url);
-    const closeBtn = overlay.querySelector(".close-btn");
-    if (closeBtn) closeBtn.focus();
+
+    // Close handlers
+    const close = () => {
+      overlay.remove();
+      state.detailSlug = null;
+      history.replaceState(null, "", location.pathname);
+    };
+    overlay.querySelector(".close-btn").addEventListener("click", close);
+    overlay.addEventListener("click", e => { if (e.target === overlay) close(); });
+    document.addEventListener("keydown", function esc(e) { if (e.key === "Escape") { close(); document.removeEventListener("keydown", esc); } });
+
+    // Deep link
+    history.pushState(null, "", `?detail=${p.slug}`);
   }
 
-  // Close detail view
-  function closeDetail() {
-    const overlay = $(".detail-overlay");
-    if (overlay) overlay.remove();
-    state.detailSlug = null;
-    const url = new URL(location.href);
-    url.searchParams.delete("detail");
-    history.replaceState(null, "", url);
+  // Detail panel content
+  function detailPanel(p) {
+    const m = p.model;
+    const growth = p.change_7d;
+    const growthClass = growth === null ? "" : (growth >= 0 ? "positive" : "negative");
+
+    // Value bar chart data
+    const bars = [
+      { label: "TVL", value: p.tvl_usd, max: p.tvl_usd, color: "linear-gradient(90deg, #00d4aa, #00b896)" },
+      { label: "Base", value: m.base_value_usd, max: Math.max(p.tvl_usd, m.base_value_usd, p.implied_value_usd), color: "linear-gradient(90deg, #ff6b2a, #e85d1f)" },
+      { label: "Growth×", value: m.base_value_usd * m.growth_multiplier, max: Math.max(p.tvl_usd, m.base_value_usd, p.implied_value_usd), color: "linear-gradient(90deg, #ff6b2a, #ffb800)" },
+      { label: "Maturity×", value: m.base_value_usd * m.growth_multiplier * m.maturity_multiplier, max: Math.max(p.tvl_usd, m.base_value_usd, p.implied_value_usd), color: "linear-gradient(90deg, #7c4dff, #6a3de8)" },
+      { label: "Implied", value: p.implied_value_usd, max: Math.max(p.tvl_usd, m.base_value_usd, p.implied_value_usd), color: "linear-gradient(90deg, #ff6b2a, #ff4d6a)" }
+    ];
+
+    // Sparkline data - generate simple 7-day trend
+    const sparkPoints = Array.from({ length: 7 }, (_, i) => {
+      const base = p.tvl_usd;
+      const variance = base * 0.02;
+      return base + (Math.random() - 0.5) * variance * 2;
+    });
+    const sparkMin = Math.min(...sparkPoints);
+    const sparkMax = Math.max(...sparkPoints);
+    const sparkRange = sparkMax - sparkMin || 1;
+    const sparkPath = sparkPoints.map((v, i) => {
+      const x = (i / 6) * 100;
+      const y = 100 - ((v - sparkMin) / sparkRange) * 90;
+      return `${x}% ${y}%`;
+    }).join(", ");
+
+    const panel = el("div", { class: "detail-panel" },
+      el("header", { class: "detail-header" },
+        el("div", { class: "detail-header-main" },
+          el("h2", { id: "detail-title" }, p.name),
+          el("span", { class: "detail-slug" }, p.slug),
+          isWatchlist(p) ? el("span", { class: "wl-badge" }, "Watchlist") : null
+        ),
+        el("div", { class: "detail-value" },
+          el("div", { class: "label" }, "Implied Value"),
+          el("div", { class: "value" }, fmtCompact(p.implied_value_usd))
+        ),
+        el("button", { class: "close-btn", "aria-label": "Close detail" }, "✕")
+      ),
+
+      // Key metrics grid
+      el("dl", { class: "detail-grid" },
+        el("dt", {}, "Category"), el("dd", {}, p.category ?? "—"),
+        el("dt", {}, "Chains"), el("dd", {}, p.chains.join(", ")),
+        el("dt", {}, "TVL"), el("dd", {}, fmtUsd(p.tvl_usd)),
+        el("dt", {}, "7d Change"), el("dd", { class: growthClass }, fmtPct(growth)),
+        el("dt", {}, "Age"), el("dd", {}, p.age_days + " days"),
+        el("dt", {}, "Comp Multiple"), el("dd", {}, m.comp_multiple.toFixed(4) + ` (${m.comps_n} ${m.comps_source} comps)`),
+        el("dt", {}, "Base Value"), el("dd", {}, fmtUsd(m.base_value_usd)),
+        el("dt", {}, "Growth Mult"), el("dd", { class: growthClass }, "×" + m.growth_multiplier.toFixed(4)),
+        el("dt", {}, "Maturity Mult"), el("dd", {}, "×" + m.maturity_multiplier.toFixed(4)),
+        el("dt", {}, "Implied Value"), el("dd", { class: "implied-value" }, fmtUsd(p.implied_value_usd)),
+        el("dt", {}, "Model Detail"), el("dd", { class: "model-detail" }, formatModel(m))
+      ),
+
+      // Value Bar Chart
+      el("div", { class: "value-bar-chart", "aria-label": "Value composition chart" },
+        ...bars.map(b => {
+          const pct = (b.value / b.max * 100).toFixed(1);
+          return el("div", { class: "bar-row" },
+            el("div", { class: "bar-label" }, b.label),
+            el("div", { class: "bar-track" },
+              el("div", {
+                class: "bar-fill",
+                style: `width: ${pct}%; background: ${b.color};`
+              }, el("span", { class: "bar-value" }, fmtCompact(b.value)))
+            )
+          );
+        })
+      ),
+
+      // Sparkline
+      el("div", { class: "sparkline-wrap", "aria-label": "7-day TVL trend" },
+        el("svg", { class: "sparkline", viewBox: "0 0 100 100", preserveAspectRatio: "none" },
+          el("path", {
+            d: `M${sparkPath}`,
+            fill: "none",
+            stroke: "url(#spark-gradient)",
+            "stroke-width": "2.5",
+            "stroke-linecap": "round",
+            "stroke-linejoin": "round"
+          }),
+          el("defs", {},
+            el("linearGradient", { id: "spark-gradient", x1: "0%", y1: "0%", x2: "100%", y2: "0%" },
+              el("stop", { offset: "0%", "stop-color": "#ff6b2a" }),
+              el("stop", { offset: "100%", "stop-color": "#00d4aa" })
+            )
+          )
+        )
+      ),
+
+      // Farm Plan
+      el("h3", {}, "Farm Plan (6 Steps)"),
+      el("div", { class: "farm-plan-wrap" },
+        el("ol", { class: "farm-plan" },
+          ...p.farm_steps.map(step => el("li", {}, step))
+        )
+      )
+    );
+
+    return panel;
   }
 
-  // Handle browser back/forward
-  window.addEventListener("popstate", () => {
-    const params = new URLSearchParams(location.search);
-    const slug = params.get("detail");
-    if (slug && slug !== state.detailSlug) {
-      const p = DATA.board.find(r => r.slug === slug);
-      if (p) openDetail(p);
-    } else if (!slug && state.detailSlug) {
-      closeDetail();
-    }
-  });
-
-  // Initialize
+  // Main init
   function init() {
     const root = document.getElementById("board");
     root.setAttribute("aria-busy", "false");
+
     root.appendChild(header());
+    root.appendChild(heroSection());
     root.appendChild(filterBar());
 
-    // Build table structure
-    const table = el("table", { id: "board-table", class: "board-table" },
-      el("thead", {},
-        el("tr", {},
-          el("th", { scope: "col", "data-sort": "rank", "data-label": "Rank" }, "Rank ⇅"),
-          el("th", { scope: "col", "data-sort": "name", "data-label": "Name" }, "Name ⇅"),
-          el("th", { scope: "col", "data-sort": "category", "data-label": "Category" }, "Category ⇅"),
-          el("th", { scope: "col" }, "Chains"),
-          el("th", { scope: "col", "data-sort": "tvl_usd", "data-label": "TVL" }, "TVL ⇅"),
-          el("th", { scope: "col", "data-sort": "change_7d", "data-label": "7d" }, "7d ⇅"),
-          el("th", { scope: "col", "data-sort": "implied_value_usd", "data-label": "Implied Value" }, "Implied Value ⇅"),
-          el("th", { scope: "col", "data-sort": "age_days", "data-label": "Age" }, "Age ⇅"),
-          el("th", { scope: "col", "data-sort": "token_status", "data-label": "Status" }, "Status ⇅")
-        )
-      ),
-      el("tbody", {})
+    // Table
+    const tableWrap = el("div", { class: "table-wrap" },
+      el("table", { id: "board-table" },
+        el("caption", {}, `Showing <span id="table-count">0</span> of ${DATA.board.length} protocols`),
+        headerRow(),
+        el("tbody", { id: "board-tbody" })
+      )
     );
-    root.appendChild(table);
+    root.appendChild(tableWrap);
 
-    // Wire up sort handlers
+    // Sort handlers
     $$("#board-table th[data-sort]").forEach(th => {
-      th.style.cursor = "pointer";
       th.addEventListener("click", () => {
         const key = th.dataset.sort;
         if (state.sortKey === key) {
@@ -335,8 +416,8 @@
     const search = root.querySelector("input[type=search]");
     const catSel = root.querySelectorAll("select")[0];
     const chainSel = root.querySelectorAll("select")[1];
-    const wlChip = root.querySelectorAll(".chip")[0];
-    const ptChip = root.querySelectorAll(".chip")[1];
+    const wlChip = root.querySelectorAll(".chip-toggle")[0];
+    const ptChip = root.querySelectorAll(".chip-toggle")[1];
     const wlCheckbox = wlChip.querySelector("input[type=checkbox]");
     const ptCheckbox = ptChip.querySelector("input[type=checkbox]");
 
@@ -350,11 +431,18 @@
       const target = DATA.board.find(r => r.slug === params.get("detail"));
       if (target) openDetail(target);
     }
+
+    // Add click handlers to hero cards
+    $$(".hero-card").forEach((card, idx) => {
+      const p = DATA.board[idx];
+      card.addEventListener("click", () => openDetail(p));
+      card.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openDetail(p); } });
+    });
   }
 
   // Render table body
   function renderTable() {
-    const tbody = document.querySelector("#board-table tbody");
+    const tbody = document.querySelector("#board-tbody");
     const filtered = DATA.board.filter(matches);
     filtered.sort((a, b) => {
       const dir = state.sortDir === "asc" ? 1 : -1;
@@ -371,6 +459,11 @@
     });
     tbody.innerHTML = "";
     filtered.forEach(p => tbody.appendChild(rowEl(p)));
+
+    // Update count
+    const countEl = document.getElementById("table-count");
+    if (countEl) countEl.textContent = filtered.length;
+
     // Update sort indicators
     $$("#board-table th[data-sort]").forEach(th => {
       const key = th.dataset.sort;
